@@ -19,7 +19,7 @@ async function planSteps(task) {
       {
         role: "system",
         content:
-          "You are a browser automation planner. Convert tasks into Playwright steps. Return JSON array only."
+          "You are a browser automation planner. Convert tasks into Playwright steps. Return ONLY a JSON array of steps with {action,target,value}."
       },
       {
         role: "user",
@@ -28,18 +28,23 @@ async function planSteps(task) {
     ]
   })
 
-  return JSON.parse(response.choices[0].message.content)
+  let text = response.choices[0].message.content
+
+  // Clean markdown formatting if the model returns ```json
+  text = text.replace(/```json|```/g, "").trim()
+
+  return JSON.parse(text)
 }
 
 async function runSteps(steps) {
 
   const browser = await chromium.launch({ headless: true })
-
   const context = await browser.newContext()
-
   const page = await context.newPage()
 
   for (const step of steps) {
+
+    console.log("Running step:", step)
 
     if (step.action === "navigate") {
       await page.goto(step.target)
@@ -66,11 +71,17 @@ async function runSteps(steps) {
   await browser.close()
 }
 
-app.post("/run-task", async (req, res) => {
+async function handleTask(req, res) {
 
   try {
 
     const { task } = req.body
+
+    if (!task) {
+      return res.status(400).json({ error: "Task is required" })
+    }
+
+    console.log("Received task:", task)
 
     const steps = await planSteps(task)
 
@@ -91,7 +102,10 @@ app.post("/run-task", async (req, res) => {
 
   }
 
-})
+}
+
+app.post("/run-task", handleTask)
+app.post("/execute", handleTask)
 
 app.get("/", (req, res) => {
   res.send("Automation server running")
